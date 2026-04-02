@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 from celery import current_task
 import redis
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import inspect
 from app.core.celery_app import celery_app
@@ -20,7 +21,7 @@ redis_client_sync = redis.Redis.from_url(settings.redis_url, decode_responses=Tr
 
 async def store_fact(
     fact_text: str, source: str, task_uuid: UUID | None = None
-) -> dict[str, Any]:
+) -> str:
     local_engine = create_async_engine(db_settings.database_url, future=True)
     LocalSession = async_sessionmaker(
         local_engine, expire_on_commit=False, autoflush=False
@@ -32,11 +33,17 @@ async def store_fact(
                 if task_uuid
                 else Fact(text=fact_text, source=source)
             )
-            session.add(fact)
-            await session.commit()
-            await session.refresh(fact)
-            fact_dict = FactResponse.model_validate(fact).model_dump()
-            return fact_dict
+            try:
+                session.add(fact)
+                await session.commit()
+                await session.refresh(fact)
+                return FactResponse.model_validate(fact).model_dump_json()
+            except IntegrityError as e:
+                # fact already exists - return existing one
+                print(f"{e}")
+                await session.rollback()
+                existing_fact = await session.get(Fact, task_uuid)
+                return FactResponse.model_validate(existing_fact).model_dump_json()
     finally:
         await local_engine.dispose()
 
@@ -54,6 +61,7 @@ def fetch_and_store_fact(self) -> dict[str, Any]:
             data = response.json()
 
         fact_text = data.get("text", "")
+
         task_id_str = getattr(current_task.request, "id", None)
         try:
             task_uuid: UUID | None = UUID(task_id_str) if task_id_str else None
@@ -62,18 +70,16 @@ def fetch_and_store_fact(self) -> dict[str, Any]:
 
         # running async DB request inside sync Celery task
         saved_fact = asyncio.run(store_fact(fact_text, source_url, task_uuid))
-        saved_fact["id"] = task_id_str
 
         redis_client_sync.setex(
             "latest_fact",
             settings.fetch_interval_seconds,
-            json.dumps(saved_fact),
+            saved_fact,
         )
-        del saved_fact["id"]
         return {
             "status": "success",
             "task_id": task_id_str,
-            **saved_fact,
+            **json.loads(saved_fact),
         }
     except httpx.RequestError as e:
         raise self.retry(exc=e)
