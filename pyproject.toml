@@ -25,6 +25,6 @@ dev = [
 [tool.uv.scripts]
 app = "uvicorn app.main:app --reload"
 worker = "celery -A app.core.celery_app:celery_app worker"
-beat = "celery -A app.core.celery_app:celery_app beat"
+beat = "celery -A app.core.celery_app:celery_app beat --loglevel=INFO"
 tests = "pytest"
 lint = "ruff check ."

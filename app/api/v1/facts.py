@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.repository import FactRepository, get_fact_repository
 from app.db.session import get_session
 from app.schemas.fact import FactListResponse, FactResponse
-from app.services.cache import get_latest_fact
+from app.services.cache import get_latest_fact, set_latest_fact
 
 
 router = APIRouter()
@@ -15,13 +15,17 @@ async def get_latest_fact_endpoint(
     session: AsyncSession = Depends(get_session),
     repo: FactRepository = Depends(get_fact_repository),
 ) -> FactResponse:
+    # look up latest fact in Redis
     cached_fact = await get_latest_fact()
     if cached_fact:
         return FactResponse(**cached_fact)
 
+    # look up in DB
     fact = await repo.get_latest()
     if not fact:
         raise HTTPException(status_code=404, detail="No facts available")
+
+    await set_latest_fact(fact) # cache latest fact to Redis
     return FactResponse(
         id=fact.id,
         text=fact.text,

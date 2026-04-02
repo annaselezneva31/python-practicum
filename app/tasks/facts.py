@@ -13,9 +13,10 @@ from app.core.celery_app import celery_app
 from app.core.config import get_settings
 from app.db.models import Fact
 from app.db.session import settings as db_settings
+from app.schemas.fact import FactResponse
 
 settings = get_settings()
-
+redis_client_sync = redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
 async def store_fact(
     fact_text: str, source: str, task_uuid: UUID | None = None
@@ -34,15 +35,14 @@ async def store_fact(
             session.add(fact)
             await session.commit()
             await session.refresh(fact)
-            return {
-                c.key: getattr(fact, c.key) for c in inspect(fact).mapper.column_attrs
-            }
+            fact_dict = FactResponse.model_validate(fact).model_dump()
+            return fact_dict
     finally:
         await local_engine.dispose()
 
 
-@celery_app.task
-def fetch_and_store_fact() -> dict[str, Any]:
+@celery_app.task(bind=True, max_retries=3, default_retry_delay=10)
+def fetch_and_store_fact(self) -> dict[str, Any]:
     source_url = settings.external_fact_api
     try:
         with httpx.Client(timeout=10, follow_redirects=True) as client:
@@ -60,12 +60,11 @@ def fetch_and_store_fact() -> dict[str, Any]:
         except Exception:
             task_uuid = None
 
+        # running async DB request inside sync Celery task
         saved_fact = asyncio.run(store_fact(fact_text, source_url, task_uuid))
         saved_fact["id"] = task_id_str
-        saved_fact["created_at"] = str(saved_fact["created_at"])
-        
-        r = redis.Redis.from_url(settings.redis_url, decode_responses=True)
-        r.setex(
+
+        redis_client_sync.setex(
             "latest_fact",
             settings.fetch_interval_seconds,
             json.dumps(saved_fact),
@@ -76,5 +75,7 @@ def fetch_and_store_fact() -> dict[str, Any]:
             "task_id": task_id_str,
             **saved_fact,
         }
+    except httpx.RequestError as e:
+        raise self.retry(exc=e)
     except Exception as e:
         raise RuntimeError(f"fetch_and_store_fact failed: {e}") from e
