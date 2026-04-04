@@ -20,12 +20,11 @@ async def get_latest_fact_endpoint(
     if cached_fact:
         return FactResponse(**cached_fact)
 
-    # look up in DB
     fact = await repo.get_latest()
     if not fact:
         raise HTTPException(status_code=404, detail="No facts available")
 
-    await set_latest_fact(fact) # cache latest fact to Redis
+    await set_latest_fact(fact) # add latest fact to Redis
     return FactResponse(
         id=fact.id,
         text=fact.text,

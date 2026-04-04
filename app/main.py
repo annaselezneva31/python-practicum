@@ -5,16 +5,17 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.v1.facts import router as facts_router
 from app.core.config import get_settings
-from app.db.session import engine
+from app.db.session import get_engine
 from app.db.models import Base
 from app.services.cache import close_redis
 
 
 settings = get_settings()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # create DB
+    engine, _ = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
