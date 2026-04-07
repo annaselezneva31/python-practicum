@@ -4,8 +4,8 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from celery import current_task
 import redis
+from celery import current_task
 from sqlalchemy.exc import IntegrityError
 
 from app.core.celery_app import celery_app
@@ -17,13 +17,13 @@ from app.schemas.fact import FactResponse
 settings = get_settings()
 redis_client_sync = redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
+
 def get_session_maker():
     _, session_maker = get_engine()
     return session_maker
 
-async def store_fact(
-    fact_text: str, source: str, task_uuid: UUID | None = None
-) -> str:
+
+async def store_fact(fact_text: str, source: str, task_uuid: UUID | None = None) -> str:
     AsyncSessionMaker = get_session_maker()
     async with AsyncSessionMaker() as session:
         fact = (
@@ -78,6 +78,7 @@ def fetch_and_store_fact(self) -> dict[str, Any]:
             **json.loads(saved_fact),
         }
     except httpx.RequestError as e:
+        print("AAaaaaaaaaaaaaaaaa")
         raise self.retry(exc=e)
     except Exception as e:
         raise RuntimeError(f"fetch_and_store_fact failed: {e}") from e

@@ -1,47 +1,54 @@
 from datetime import datetime, timezone
-from unittest.mock import patch, AsyncMock, ANY
-import pytest
+from unittest.mock import ANY, AsyncMock, patch
 from uuid import uuid4
 
-from app.services.cache import get_latest_fact, set_latest_fact
-from app.db.models import Fact
 from app.core.config import get_settings
+from app.db.models import Fact
+from app.services.cache import get_latest_fact, set_latest_fact
 
 settings = get_settings()
 
-@pytest.mark.asyncio
+
 async def test_get_latest_fact_returns_dict():
     fake_redis_value = '{"id": "123", "text": "fun fact", "source": "http://...", "created_at": "2024-01-01T00:00:00"}'
-    with patch("app.services.cache.redis_client.get",
-               new=AsyncMock(return_value=fake_redis_value)):
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = fake_redis_value
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         result = await get_latest_fact()
         assert isinstance(result, dict)
-        assert result['id'] == "123"
+        assert result["id"] == "123"
 
-@pytest.mark.asyncio
+
 async def test_get_latest_fact_returns_none():
     fake_redis_value = None
-    with patch("app.services.cache.redis_client.get",
-               new=AsyncMock(return_value=fake_redis_value)):
+    mock_redis = AsyncMock()
+    mock_redis.get.return_value = fake_redis_value
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         result = await get_latest_fact()
         assert result is None
 
-@pytest.mark.asyncio
+
 async def test_get_latest_fact_returns_none_on_redis_error():
-    mock_redis = AsyncMock(side_effect=Exception("Redis down"))
-    with patch("app.services.cache.redis_client.get",
-               new=mock_redis):
+    mock_redis = AsyncMock()
+    mock_redis.get.side_effect = Exception("Redis down")
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         result = await get_latest_fact()
+        print(result)
         assert result is None
 
-@pytest.mark.asyncio
+
 async def test_set_latest_fact_called_with_correct_args():
-    fake_fact = Fact(id=uuid4(), text="fun fact", source="http://...", created_at=datetime.now(timezone.utc))
-    mock_setex = AsyncMock()
-    with patch("app.services.cache.redis_client.setex", new=mock_setex):
+    fake_fact = Fact(
+        id=uuid4(),
+        text="fun fact",
+        source="http://...",
+        created_at=datetime.now(timezone.utc),
+    )
+    mock_redis = AsyncMock()
+    with patch("app.services.cache.get_redis_client", return_value=mock_redis):
         await set_latest_fact(fake_fact)
-        mock_setex.assert_called_once_with(
+        mock_redis.setex.assert_called_once_with(
             "latest_fact",  # correct key
             settings.fetch_interval_seconds,  # correct TTL
-            ANY  # don't care about exact JSON value
+            ANY,  # don't care about exact JSON value
         )

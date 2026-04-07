@@ -1,11 +1,13 @@
 import json
+
 import redis.asyncio as redis
+
 from app.core.config import get_settings
 from app.db.models import Fact
 from app.schemas.fact import FactResponse
 
-
 _redis_client = None
+
 
 def get_redis_client():
     global _redis_client
@@ -13,6 +15,7 @@ def get_redis_client():
         settings = get_settings()
         _redis_client = redis.from_url(settings.redis_url, decode_responses=True)
     return _redis_client
+
 
 async def get_latest_fact() -> dict | None:
     redis_client = get_redis_client()
@@ -25,14 +28,18 @@ async def get_latest_fact() -> dict | None:
         print(f"Redis error {e}")
         return None
 
+
 async def set_latest_fact(fact: Fact) -> None:
     settings = get_settings()
     redis_client = get_redis_client()
     fact_json = FactResponse.model_validate(fact).model_dump_json()
     try:
-        await redis_client.setex("latest_fact", settings.fetch_interval_seconds, fact_json)
+        await redis_client.setex(
+            "latest_fact", settings.fetch_interval_seconds, fact_json
+        )
     except Exception as e:
         print(f"Redis error {e}")
+
 
 async def close_redis():
     global _redis_client

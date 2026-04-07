@@ -1,19 +1,19 @@
+from unittest.mock import patch
+
 import pytest
-import pytest_asyncio
+import redis as sync_redis
+import redis.asyncio as redis
 import sqlalchemy
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
-from unittest.mock import patch
-import redis.asyncio as redis
-import redis as sync_redis
 
-from app.core.config import Settings
-from app.main import app
-from app.db.models import Base, Fact
 import app.db.session as session_module
 import app.services.cache as cache_module
+from app.core.config import Settings
+from app.db.models import Base, Fact
+from app.main import app
 
 
 # ── Containers (session scope, sync — testcontainers are sync) ────────────────
@@ -22,10 +22,12 @@ def db_container():
     with PostgresContainer("postgres:16") as container:
         yield container
 
+
 @pytest.fixture(scope="session")
 def redis_container():
     with RedisContainer() as container:
         yield container
+
 
 # ── Engine creation (session scope, sync engine) ─────────────────
 @pytest.fixture(scope="session")
@@ -34,6 +36,7 @@ def sync_db_engine(db_container):
     engine = sqlalchemy.create_engine(url)
     yield engine
     engine.dispose()
+
 
 # ── Schema creation (session scope, sync engine) ─────────────────
 @pytest.fixture(scope="session")
@@ -52,6 +55,7 @@ def sync_redis_client(redis_container):
     yield redis_client_sync
     redis_client_sync.close()
 
+
 # ── Settings override (session scope) ─────────────────────────────────────────
 @pytest.fixture(scope="session")
 def test_settings(db_container, redis_container):
@@ -63,7 +67,9 @@ def test_settings(db_container, redis_container):
     db_password = db_container.password
     db_name = db_container.dbname
 
-    async_db_url = f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    async_db_url = (
+        f"postgresql+asyncpg://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+    )
 
     redis_host = redis_container.get_container_host_ip()
     redis_port = redis_container.get_exposed_port(6379)
@@ -74,13 +80,16 @@ def test_settings(db_container, redis_container):
         redis_url=redis_url,
     )
 
+
 @pytest.fixture(scope="session")
 def override_settings(test_settings):
     # Patch get_settings everywhere it is called directly
-    with patch("app.core.config.get_settings", return_value=test_settings), \
-         patch("app.db.session.get_settings", return_value=test_settings), \
-         patch("app.services.cache.get_settings", return_value=test_settings), \
-         patch("app.main.get_settings", return_value=test_settings):
+    with (
+        patch("app.core.config.get_settings", return_value=test_settings),
+        patch("app.db.session.get_settings", return_value=test_settings),
+        patch("app.services.cache.get_settings", return_value=test_settings),
+        patch("app.main.get_settings", return_value=test_settings),
+    ):
         # Reset lazy singletons so they reinitialize with patched settings
         session_module._engine = None
         session_module._AsyncSessionMaker = None
@@ -113,18 +122,19 @@ def truncate_tables(sync_db_engine, db_tables, override_settings, sync_redis_cli
     # engine = sqlalchemy.create_engine(url)
     with sync_db_engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
-            conn.execute(table.delete()) # deletes all tables
-    sync_redis_client.flushall() # clears all data from cache
+            conn.execute(table.delete())  # deletes all tables
+    sync_redis_client.flushall()  # clears all data from cache
 
 
 # ── Creating Test data (function scope) ───────────────────────────
 @pytest.fixture(scope="function")
 def added_fact(override_settings, sync_db_engine, db_tables):
     with Session(sync_db_engine, expire_on_commit=False) as session:
-        fact = Fact(text='New fact:Cats', source='http://cats.com')
+        fact = Fact(text="New fact:Cats", source="http://cats.com")
         session.add(fact)
         session.commit()
         yield fact
+
 
 @pytest.fixture(scope="function")
 def mock_redis_client(redis_container):
@@ -135,12 +145,15 @@ def mock_redis_client(redis_container):
     yield redis_client
     redis_client.close()
 
+
 @pytest.fixture(scope="function")
 def added_several_facts(override_settings, sync_db_engine, db_tables):
     with Session(sync_db_engine, expire_on_commit=False) as session:
         facts = []
         for i in range(3):
-            fact = Fact(text=f'New fact_{i + 1}:Cats', source=f'http://cats_{i + 1}.com')
+            fact = Fact(
+                text=f"New fact_{i + 1}:Cats", source=f"http://cats_{i + 1}.com"
+            )
             facts.append(fact)
         session.add_all(facts)
         session.commit()

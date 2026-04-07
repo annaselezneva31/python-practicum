@@ -6,7 +6,6 @@ from app.db.session import get_session
 from app.schemas.fact import FactListResponse, FactResponse
 from app.services.cache import get_latest_fact, set_latest_fact
 
-
 router = APIRouter()
 
 
@@ -24,7 +23,7 @@ async def get_latest_fact_endpoint(
     if not fact:
         raise HTTPException(status_code=404, detail="No facts available")
 
-    await set_latest_fact(fact) # add latest fact to Redis
+    await set_latest_fact(fact)  # add latest fact to Redis
     return FactResponse(
         id=fact.id,
         text=fact.text,

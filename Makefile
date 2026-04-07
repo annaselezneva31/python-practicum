@@ -1,4 +1,4 @@
-.PHONY: app worker beat tests lint format
+.PHONY: app worker beat tests lint lint-fix format format-check
 
 app:
 	uv run uvicorn app.main:app --reload
@@ -10,3 +10,9 @@ tests:
 	uv run pytest
 lint:
 	uv run ruff check .
+lint-fix:
+	uv run ruff check . --fix
+format:
+	uv run ruff format .
+format-check:
+	uv run ruff format . --check
