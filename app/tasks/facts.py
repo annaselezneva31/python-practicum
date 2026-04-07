@@ -6,26 +6,23 @@ from uuid import UUID
 import httpx
 import redis
 from celery import current_task
+from sqlalchemy import NullPool
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.celery_app import celery_app
 from app.core.config import get_settings
 from app.db.models import Fact
-from app.db.session import get_engine
 from app.schemas.fact import FactResponse
 
 settings = get_settings()
 redis_client_sync = redis.Redis.from_url(settings.redis_url, decode_responses=True)
 
 
-def get_session_maker():
-    _, session_maker = get_engine()
-    return session_maker
-
-
 async def store_fact(fact_text: str, source: str, task_uuid: UUID | None = None) -> str:
-    AsyncSessionMaker = get_session_maker()
-    async with AsyncSessionMaker() as session:
+    engine_db = create_async_engine(settings.database_url, poolclass=NullPool)
+    async_session = async_sessionmaker(engine_db, expire_on_commit=False)
+    async with async_session() as session:
         fact = (
             Fact(id=task_uuid, text=fact_text, source=source)
             if task_uuid
@@ -78,7 +75,6 @@ def fetch_and_store_fact(self) -> dict[str, Any]:
             **json.loads(saved_fact),
         }
     except httpx.RequestError as e:
-        print("AAaaaaaaaaaaaaaaaa")
         raise self.retry(exc=e)
     except Exception as e:
         raise RuntimeError(f"fetch_and_store_fact failed: {e}") from e

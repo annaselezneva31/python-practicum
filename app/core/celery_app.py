@@ -8,6 +8,7 @@ celery_app = Celery(
     "facts",
     broker=settings.celery_broker_url,  # where Celery sends tasks
     backend=settings.celery_result_backend,  # where results are stored
+    include=["app.tasks.facts"]
 )
 
 celery_app.conf.update(
@@ -20,6 +21,3 @@ celery_app.conf.update(
     },
     timezone="UTC",
 )
-
-# where to look for tasks
-celery_app.autodiscover_tasks(["app.tasks"])

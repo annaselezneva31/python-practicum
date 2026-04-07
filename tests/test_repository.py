@@ -19,9 +19,7 @@ async def make_repo():
 
 
 async def test_create_fact():
-    from app.core.config import get_settings
 
-    print(get_settings().database_url)
     async with make_repo() as repo:
         res = await repo.create(text=TEXT, source=SOURCE)
         assert res.id
